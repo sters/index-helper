@@ -1,6 +1,6 @@
-module github.com/sters/go-project-boilerplate
+module github.com/sters/index-helper
 
-go 1.16
+go 1.17
 
 require (
 	github.com/golangci/golangci-lint v1.42.0
