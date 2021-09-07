@@ -233,3 +233,24 @@ func (m *Adapter) findOverWrapIndex() {
 
 	spew.Dump(m.overwrapIndexes)
 }
+
+/*
+select
+c.table_schema,
+c.table_name,
+c.column_name,
+c.column_type,
+t.table_rows
+
+from
+information_schema.columns as c
+inner join
+information_schema.tables as t
+on c.table_schema = t.table_schema and c.table_name = t.table_name
+
+where
+c.table_schema = "xxx" and c.column_key = "PRI"
+
+order by
+table_rows desc
+*/
