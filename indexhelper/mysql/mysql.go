@@ -5,11 +5,13 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
+	// load mysql driver for this package
 	_ "github.com/go-sql-driver/mysql"
+
 	"github.com/morikuni/failure"
 	"github.com/sters/index-helper/indexhelper"
 )
@@ -18,7 +20,10 @@ type Adapter struct {
 	client *sql.DB
 	loaded loadResult
 
-	overwrapIndexes map[string]map[string][]*overwrap
+	overwrapIndexes            map[string]map[string][]*overwrap
+	foreignIndexes             map[string]map[string][]*indexhelper.Index
+	noForeignIndexColumns      map[string]map[string][]*indexhelper.Column
+	badCardinalityOrderIndexes map[string]map[string][]*indexhelper.Index
 }
 
 type overwrap struct {
@@ -62,6 +67,8 @@ func (m *Adapter) FetchIndexInfo(ctx context.Context) error {
 	}
 
 	m.findOverWrapIndex()
+	m.findForeignIndex()
+	m.findBadCardinalityOrderIndex()
 
 	return nil
 }
@@ -104,12 +111,12 @@ information_schema.columns`
 		}
 
 		if _, ok := m.loaded[r.DBName]; !ok {
-			m.loaded[r.DBName] = map[string]*indexhelper.Table{}
+			m.loaded[r.DBName] = make(map[string]*indexhelper.Table)
 		}
 
 		if _, ok := m.loaded[r.DBName][r.TableName]; !ok {
 			m.loaded[r.DBName][r.TableName] = &indexhelper.Table{
-				Name:   r.Name,
+				Name:   r.TableName,
 				DBName: r.DBName,
 			}
 		}
@@ -120,7 +127,6 @@ information_schema.columns`
 		)
 	}
 
-	spew.Dump(m)
 	return nil
 }
 
@@ -131,7 +137,8 @@ table_schema,
 table_name,
 index_name,
 non_unique,
-group_concat(column_name order by seq_in_index, ",")
+group_concat(column_name order by seq_in_index, ","),
+group_concat(cardinality order by seq_in_index, ",")
 
 from
 information_schema.statistics
@@ -151,23 +158,37 @@ table_schema, table_name, non_unique, index_name`
 	for rows.Next() {
 		var r indexhelper.Index
 		var nonUnique int
-		var c string
+		var columns string
+		var cardinalities *string
 		err := rows.Scan(
 			&r.DBName,
 			&r.TableName,
 			&r.Name,
 			&nonUnique,
-			&c,
+			&columns,
+			&cardinalities,
 		)
 		if err != nil {
 			return failure.Wrap(err)
 		}
 
 		r.IsUnique = nonUnique == 0
-		r.Columns = strings.Split(c, ",")
+		r.Columns = strings.Split(columns, ",")
+
+		if cardinalities != nil {
+			cards := strings.Split(*cardinalities, ",")
+			r.Cardinality = make([]uint64, len(cards))
+			for i, c := range cards {
+				cc, err := strconv.ParseUint(c, 10, 64)
+				if err != nil {
+					continue
+				}
+				r.Cardinality[i] = cc
+			}
+		}
 
 		if _, ok := m.loaded[r.DBName]; !ok {
-			m.loaded[r.DBName] = map[string]*indexhelper.Table{}
+			m.loaded[r.DBName] = make(map[string]*indexhelper.Table)
 		}
 
 		if _, ok := m.loaded[r.DBName][r.TableName]; !ok {
@@ -189,10 +210,6 @@ table_schema, table_name, non_unique, index_name`
 func (m *Adapter) findOverWrapIndex() {
 	for dbName, db := range m.loaded {
 		for _, table := range db {
-			if table.Name != "access_limits" {
-				continue
-			}
-
 			table := table
 			sort.Slice(table.Indexes, func(i, j int) bool {
 				return len(table.Indexes[i].Columns) > len(table.Indexes[j].Columns)
@@ -201,6 +218,10 @@ func (m *Adapter) findOverWrapIndex() {
 			exists := []*overwrap{}
 
 			for _, i := range table.Indexes {
+				if i.Name == "PRIMARY" {
+					continue
+				}
+
 				isContinue := false
 				for _, ei := range exists {
 					if indexhelper.InArray(ei.coveredIndex.Columns, i.Columns) {
@@ -230,8 +251,96 @@ func (m *Adapter) findOverWrapIndex() {
 			m.overwrapIndexes[dbName][table.Name] = exists
 		}
 	}
+}
 
-	spew.Dump(m.overwrapIndexes)
+func (m *Adapter) findForeignIndex() {
+	for dbName, db := range m.loaded {
+		for _, table := range db {
+			table := table
+			sort.Slice(table.Indexes, func(i, j int) bool {
+				return len(table.Indexes[i].Columns) > len(table.Indexes[j].Columns)
+			})
+
+			indexes := make(map[string]struct{})
+			exists := []*indexhelper.Index{}
+			for _, i := range table.Indexes {
+				found := false
+				for _, c := range i.Columns {
+					// todo
+					if strings.Contains(c, "_id") {
+						indexes[c] = struct{}{}
+						found = true
+					}
+				}
+
+				if found {
+					exists = append(exists, i)
+				}
+			}
+
+			if m.foreignIndexes == nil {
+				m.foreignIndexes = make(map[string]map[string][]*indexhelper.Index)
+			}
+			if _, ok := m.foreignIndexes[dbName]; !ok {
+				m.foreignIndexes[dbName] = make(map[string][]*indexhelper.Index)
+			}
+			m.foreignIndexes[dbName][table.Name] = exists
+
+			columns := []*indexhelper.Column{}
+			for _, c := range table.Columns {
+				// todo
+				if _, ok := indexes[c.Name]; ok || !strings.Contains(c.Name, "_id") {
+					continue
+				}
+				columns = append(columns, c)
+			}
+
+			if m.noForeignIndexColumns == nil {
+				m.noForeignIndexColumns = make(map[string]map[string][]*indexhelper.Column)
+			}
+			if _, ok := m.noForeignIndexColumns[dbName]; !ok {
+				m.noForeignIndexColumns[dbName] = make(map[string][]*indexhelper.Column)
+			}
+			m.noForeignIndexColumns[dbName][table.Name] = columns
+		}
+	}
+}
+
+func (m *Adapter) findBadCardinalityOrderIndex() {
+	for dbName, db := range m.loaded {
+		for _, table := range db {
+			exists := []*indexhelper.Index{}
+			for _, i := range table.Indexes {
+				if len(i.Cardinality) == 1 {
+					continue
+				}
+
+				found := false
+				before := uint64(0)
+				total := uint64(0)
+				for i, c := range i.Cardinality {
+					if i > 0 && before < (c-total) {
+						found = true
+						break
+					}
+					before = (c - total)
+					total = c
+				}
+
+				if found {
+					exists = append(exists, i)
+				}
+			}
+
+			if m.badCardinalityOrderIndexes == nil {
+				m.badCardinalityOrderIndexes = make(map[string]map[string][]*indexhelper.Index)
+			}
+			if _, ok := m.badCardinalityOrderIndexes[dbName]; !ok {
+				m.badCardinalityOrderIndexes[dbName] = make(map[string][]*indexhelper.Index)
+			}
+			m.badCardinalityOrderIndexes[dbName][table.Name] = exists
+		}
+	}
 }
 
 /*
@@ -254,3 +363,60 @@ c.table_schema = "xxx" and c.column_key = "PRI"
 order by
 table_rows desc
 */
+
+func (m *Adapter) GetNotGoodItems(context.Context) []*indexhelper.NotGoodItem {
+	result := []*indexhelper.NotGoodItem{}
+
+	for _, indexes := range m.overwrapIndexes {
+		for _, table := range indexes {
+			for _, o := range table {
+				for _, si := range o.smallIndexes {
+					result = append(
+						result,
+						&indexhelper.NotGoodItem{
+							Name: fmt.Sprintf(
+								"Index %s is covered by another index %s",
+								si,
+								o.coveredIndex,
+							),
+						},
+					)
+				}
+			}
+		}
+	}
+
+	for _, table := range m.noForeignIndexColumns {
+		for _, cols := range table {
+			for _, c := range cols {
+				result = append(
+					result,
+					&indexhelper.NotGoodItem{
+						Name: fmt.Sprintf(
+							"Column %s seems foreign key but not indexed",
+							c,
+						),
+					},
+				)
+			}
+		}
+	}
+
+	for _, table := range m.badCardinalityOrderIndexes {
+		for _, indexes := range table {
+			for _, i := range indexes {
+				result = append(
+					result,
+					&indexhelper.NotGoodItem{
+						Name: fmt.Sprintf(
+							"Index %s has bad cardinality order",
+							i,
+						),
+					},
+				)
+			}
+		}
+	}
+
+	return result
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 
 	"github.com/sters/index-helper/indexhelper/mysql"
 )
@@ -36,7 +37,11 @@ func main() {
 		panic(err)
 	}
 
-	// result := indexhelper.FindOverWrapIndex(index)
-
-	// spew.Dump(result)
+	for _, notGoodItem := range db.GetNotGoodItems(ctx) {
+		if notGoodItem.Detail == "" {
+			log.Printf("%s", notGoodItem.Name)
+		} else {
+			log.Printf("%s: %s", notGoodItem.Name, notGoodItem.Detail)
+		}
+	}
 }
