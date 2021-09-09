@@ -311,6 +311,7 @@ func (m *Adapter) findForeignIndex() {
 }
 
 func (m *Adapter) findBadCardinalityOrderIndex() {
+	// TODO: cardinalityはやっぱり計算された結果になるので、COUNT(DISTINCT hoge) しないとちゃんと出てこない
 	for dbName, db := range m.loaded {
 		for _, table := range db {
 			exists := []*indexhelper.Index{}
