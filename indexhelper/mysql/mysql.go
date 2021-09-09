@@ -208,6 +208,10 @@ table_schema, table_name, non_unique, index_name`
 }
 
 func (m *Adapter) findOverWrapIndex() {
+	// TODO: 先頭が一致していて、片方が長い場合は確実にoverwrapされている
+	// TOOD: 先頭以外で一致している場合は、WHEREにカラムを足すことでカバーできる可能性がある
+	// TODO: 先頭が一致していて、お尻が異なる場合は難しいけど対応できるかもしれない
+	// https://github.com/mysql/mysql-sys#schema_redundant_indexes--xschema_flattened_keys これでええやん
 	for dbName, db := range m.loaded {
 		for _, table := range db {
 			table := table
