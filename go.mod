@@ -3,11 +3,9 @@ module github.com/sters/index-helper
 go 1.17
 
 require (
-	github.com/davecgh/go-spew v1.1.1
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/golangci/golangci-lint v1.42.1
 	github.com/morikuni/failure v0.14.0
-	github.com/quasilyte/go-consistent v0.0.0-20190521200055-c6f3937de18c
 )
 
 require (
@@ -27,6 +25,7 @@ require (
 	github.com/charithe/durationcheck v0.0.8 // indirect
 	github.com/chavacava/garif v0.0.0-20210405164556-e8a0a408d6af // indirect
 	github.com/daixiang0/gci v0.2.9 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/denis-tingajkin/go-header v0.4.2 // indirect
 	github.com/esimonov/ifshort v1.0.2 // indirect
 	github.com/ettle/strcase v0.1.1 // indirect
@@ -39,9 +38,7 @@ require (
 	github.com/go-toolsmith/astcopy v1.0.0 // indirect
 	github.com/go-toolsmith/astequal v1.0.0 // indirect
 	github.com/go-toolsmith/astfmt v1.0.0 // indirect
-	github.com/go-toolsmith/astinfo v0.0.0-20180906194353-9809ff7efb21 // indirect
 	github.com/go-toolsmith/astp v1.0.0 // indirect
-	github.com/go-toolsmith/pkgload v1.0.0 // indirect
 	github.com/go-toolsmith/strparse v1.0.0 // indirect
 	github.com/go-toolsmith/typep v1.0.2 // indirect
 	github.com/go-xmlfmt/xmlfmt v0.0.0-20191208150333-d5b6f63a941b // indirect

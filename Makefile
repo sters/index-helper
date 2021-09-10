@@ -16,7 +16,6 @@ run:
 .PHONY: lint
 lint:
 	$(GOBIN)/golangci-lint run -v ./...
-	$(GOBIN)/go-consistent -v ./...
 
 .PHONY: lint-fix
 lint-fix:

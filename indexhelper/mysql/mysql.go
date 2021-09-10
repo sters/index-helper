@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	// load mysql driver for this package
+	// load mysql driver for this package.
 	_ "github.com/go-sql-driver/mysql"
 
 	"github.com/morikuni/failure"
@@ -33,6 +33,12 @@ type overwrap struct {
 
 type loadResult map[string]map[string]*indexhelper.Table
 
+const (
+	connMaxLifetime = 3 * time.Minute
+	maxOpenConns    = 2
+	maxIdleConns    = 1
+)
+
 func Open(user, password, host string) (*Adapter, error) {
 	db, err := sql.Open(
 		"mysql",
@@ -43,9 +49,9 @@ func Open(user, password, host string) (*Adapter, error) {
 	}
 
 	// See "Important settings" section.
-	db.SetConnMaxLifetime(time.Minute * 3)
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(10)
+	db.SetConnMaxLifetime(connMaxLifetime)
+	db.SetMaxOpenConns(maxOpenConns)
+	db.SetMaxIdleConns(maxIdleConns)
 
 	return &Adapter{
 		client: db,
@@ -127,6 +133,10 @@ information_schema.columns`
 		)
 	}
 
+	if err := rows.Err(); err != nil {
+		return failure.Wrap(err)
+	}
+
 	return nil
 }
 
@@ -179,7 +189,7 @@ table_schema, table_name, non_unique, index_name`
 			cards := strings.Split(*cardinalities, ",")
 			r.Cardinality = make([]uint64, len(cards))
 			for i, c := range cards {
-				cc, err := strconv.ParseUint(c, 10, 64)
+				cc, err := strconv.ParseUint(c, 10, 64) // nolint:gomnd
 				if err != nil {
 					continue
 				}
@@ -204,12 +214,16 @@ table_schema, table_name, non_unique, index_name`
 		)
 	}
 
+	if err := rows.Err(); err != nil {
+		return failure.Wrap(err)
+	}
+
 	return nil
 }
 
 func (m *Adapter) findOverWrapIndex() {
 	// TODO: 先頭が一致していて、片方が長い場合は確実にoverwrapされている
-	// TOOD: 先頭以外で一致している場合は、WHEREにカラムを足すことでカバーできる可能性がある
+	// TODO: 先頭以外で一致している場合は、WHEREにカラムを足すことでカバーできる可能性がある
 	// TODO: 先頭が一致していて、お尻が異なる場合は難しいけど対応できるかもしれない
 	// https://github.com/mysql/mysql-sys#schema_redundant_indexes--xschema_flattened_keys これでええやん
 	for dbName, db := range m.loaded {
