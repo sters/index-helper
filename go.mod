@@ -5,7 +5,7 @@ go 1.17
 require (
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/golangci/golangci-lint v1.46.2
-	github.com/morikuni/failure v0.14.0
+	github.com/morikuni/failure v1.0.0
 )
 
 require (
